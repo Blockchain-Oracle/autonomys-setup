@@ -202,7 +202,7 @@ services:
         "--rpc-methods", "unsafe",
         "--rpc-listen-on", "0.0.0.0:9944",
         "--farmer",
-        "--name", "$NODE_NAME"
+        "--name", "${NODE_NAME}"
       ]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -226,7 +226,7 @@ services:
         "farm",
         "--node-rpc-url", "ws://node:9944",
         "--listen-on", "/ip4/0.0.0.0/tcp/30533",
-        "--reward-address", "$REWARD_ADDRESS",
+        "--reward-address", "${REWARD_ADDRESS}",
         "path=/var/subspace,size=${FARMING_SIZE}G"
       ]
 
@@ -240,7 +240,6 @@ check_success "Docker Compose file created"
 # Create useful scripts
 echo "📋 Creating management scripts..."
 
-# Create start script
 cat > start.sh << 'EOF'
 #!/bin/bash
 echo "🚀 Starting Autonomys Network..."
@@ -250,7 +249,6 @@ echo "📊 Use 'sudo docker-compose ps' to check status"
 EOF
 chmod +x start.sh
 
-# Create stop script
 cat > stop.sh << 'EOF'
 #!/bin/bash
 echo "🛑 Stopping Autonomys Network..."
@@ -259,7 +257,6 @@ echo "✅ Services stopped!"
 EOF
 chmod +x stop.sh
 
-# Create logs script
 cat > logs.sh << 'EOF'
 #!/bin/bash
 echo "📋 Showing logs (Press Ctrl+C to exit)..."
@@ -267,7 +264,6 @@ sudo docker-compose logs --tail=1000 -f
 EOF
 chmod +x logs.sh
 
-# Create status script
 cat > status.sh << 'EOF'
 #!/bin/bash
 echo "📊 Autonomys Network Status:"
