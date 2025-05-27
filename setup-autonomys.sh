@@ -51,7 +51,7 @@ else
 fi
 
 # Calculate farming size recommendations
-SYSTEM_RESERVE=20      # Space for system operations
+SYSTEM_RESERVE=8      # Space for system operations
 NODE_STORAGE=100       # Official node storage requirement
 TOTAL_RESERVE=$((SYSTEM_RESERVE + NODE_STORAGE))  # 120GB total
 

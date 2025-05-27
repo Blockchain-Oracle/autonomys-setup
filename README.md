@@ -25,6 +25,8 @@
 | **Node Storage** | 100GB | 256GB |
 | **Farm Storage** | 100GB | ♾️ (Unlimited) |
 
+check the docs for latest recommend System Requirements [Autonomys Docs](https://docs.autonomys.xyz/farming/intro)
+
 ### Additional Requirements
 - **Fresh Ubuntu/Debian VPS** (18.04+ recommended)
 - **Talisman wallet address** for rewards
