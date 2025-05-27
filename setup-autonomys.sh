@@ -274,7 +274,7 @@ done
 cat > start.sh << 'EOF'
 #!/bin/bash
 echo "🚀 Starting Autonomys Network..."
-sudo docker-compose up -d
+sudo docker compose up -d
 echo "✅ Services started!"
 EOF
 
@@ -282,7 +282,7 @@ EOF
 cat > stop.sh << 'EOF'
 #!/bin/bash
 echo "🛑 Stopping Autonomys Network..."
-sudo docker-compose down
+sudo docker compose down
 echo "✅ Services stopped!"
 EOF
 
@@ -290,14 +290,14 @@ EOF
 cat > logs.sh << 'EOF'
 #!/bin/bash
 echo "📋 Showing logs..."
-sudo docker-compose logs --tail=1000 -f
+sudo docker compose logs --tail=1000 -f
 EOF
 
 # status.sh
 cat > status.sh << 'EOF'
 #!/bin/bash
 echo "📊 Network Status:"
-sudo docker-compose ps
+sudo docker compose ps
 echo ""
 echo "💾 Disk Usage:"
 df -h /
@@ -311,11 +311,11 @@ check_success "Management scripts created"
 
 # Pull & launch
 echo "📥 Pulling images..."
-sudo docker-compose pull
+sudo docker compose pull
 check_success "Images pulled"
 
 echo "🚀 Launching services..."
-sudo docker-compose up -d
+sudo docker compose up -d
 check_success "Services launched"
 
 # Final summary
