@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # 🚀 Autonomys Network Node & Farmer Setup Script
-# This script will install Docker and set up your Autonomys node and farmer
+# This script will detect your OS, install Docker & Docker Compose,
+# then set up your Autonomys node and farmer.
 
 echo "🌟 Welcome to Autonomys Network Setup!"
 echo "======================================"
@@ -17,7 +18,108 @@ check_success() {
     fi
 }
 
-# Get system information
+# --------------------------------------------------
+# 1) Detect OS
+# --------------------------------------------------
+detect_os() {
+    if [ -e /etc/os-release ]; then
+        . /etc/os-release
+        OS_ID=$ID
+        OS_VERSION_ID=$VERSION_ID
+        echo "🔍 Detected OS: $PRETTY_NAME"
+    else
+        echo "❌ Cannot detect operating system."
+        exit 1
+    fi
+}
+
+# --------------------------------------------------
+# 2) Install Docker
+# --------------------------------------------------
+install_docker() {
+    case "$OS_ID" in
+        ubuntu|debian)
+            echo "📦 Installing Docker on $OS_ID..."
+            sudo apt update
+            sudo apt install -y \
+                ca-certificates \
+                curl \
+                gnupg \
+                lsb-release
+            sudo install -m0755 -d /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/$OS_ID/gpg \
+                | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            sudo chmod a+r /etc/apt/keyrings/docker.gpg
+            echo \
+              "deb [arch=$(dpkg --print-architecture) \
+              signed-by=/etc/apt/keyrings/docker.gpg] \
+              https://download.docker.com/linux/$OS_ID \
+              $(lsb_release -cs) stable" \
+              | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt update
+            sudo apt install -y docker-ce docker-ce-cli containerd.io
+            ;;
+        centos|rhel)
+            echo "📦 Installing Docker on $OS_ID..."
+            sudo yum install -y yum-utils
+            sudo yum-config-manager \
+                --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+            sudo yum install -y docker-ce docker-ce-cli containerd.io
+            ;;
+        fedora)
+            echo "📦 Installing Docker on Fedora..."
+            sudo dnf -y install dnf-plugins-core
+            sudo dnf config-manager \
+                --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+            sudo dnf install -y docker-ce docker-ce-cli containerd.io
+            ;;
+        *)
+            echo "❌ Unsupported operating system: $OS_ID"
+            exit 1
+            ;;
+    esac
+    check_success "Docker installation"
+}
+
+# --------------------------------------------------
+# 3) Install Docker Compose
+# --------------------------------------------------
+install_docker_compose() {
+    echo "🔧 Installing Docker Compose plugin..."
+    # Docker Compose as a plugin:
+    if ! docker compose version &>/dev/null; then
+        sudo apt update || true  # ensure cache exists on apt-based
+        sudo apt install -y curl || true
+        sudo curl -SL \
+          "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+          -o /usr/local/bin/docker-compose
+        sudo chmod +x /usr/local/bin/docker-compose
+    fi
+    check_success "Docker Compose installation"
+}
+
+# --------------------------------------------------
+# Perform detection & installs
+# --------------------------------------------------
+detect_os
+install_docker
+install_docker_compose
+
+# Add user to docker group
+echo "👤 Adding user to docker group..."
+sudo usermod -aG docker $USER
+check_success "User added to docker group"
+
+# Start and enable Docker service
+echo "🚀 Starting Docker service..."
+sudo systemctl start docker
+sudo systemctl enable docker
+check_success "Docker service started"
+
+# --------------------------------------------------
+# 4) Gather system info & verify hardware
+# --------------------------------------------------
+echo ""
 echo "📊 Checking system information..."
 TOTAL_SPACE=$(df -h / | awk 'NR==2{print $2}' | sed 's/G//')
 AVAILABLE_SPACE=$(df -h / | awk 'NR==2{print $4}' | sed 's/G//')
@@ -30,154 +132,79 @@ echo "🧠 RAM: ${RAM_GB}GB"
 echo "🖥️  CPU Cores: $CPU_CORES"
 echo ""
 
-# Check hardware requirements against official specs
-echo "🔍 Checking hardware requirements..."
 WARNINGS=0
-
-# Check CPU cores (minimum 4)
+echo "🔍 Checking hardware requirements..."
 if [ "$CPU_CORES" -lt 4 ]; then
-    echo "⚠️  WARNING: Only $CPU_CORES CPU cores detected. Official minimum: 4 cores"
+    echo "⚠️  WARNING: Only $CPU_CORES CPU cores detected (min: 4)"
     WARNINGS=$((WARNINGS + 1))
 else
-    echo "✅ CPU cores: $CPU_CORES (meets requirement)"
+    echo "✅ CPU cores: $CPU_CORES"
 fi
-
-# Check RAM (minimum 8GB)
 if [ "$RAM_GB" -lt 8 ]; then
-    echo "⚠️  WARNING: Only ${RAM_GB}GB RAM detected. Official minimum: 8GB"
+    echo "⚠️  WARNING: Only ${RAM_GB}GB RAM detected (min: 8GB)"
     WARNINGS=$((WARNINGS + 1))
 else
-    echo "✅ RAM: ${RAM_GB}GB (meets requirement)"
+    echo "✅ RAM: ${RAM_GB}GB"
 fi
 
-# Calculate farming size recommendations
-SYSTEM_RESERVE=8      # Space for system operations
-NODE_STORAGE=100       # Official node storage requirement
-TOTAL_RESERVE=$((SYSTEM_RESERVE + NODE_STORAGE))  # 108GB total
+SYSTEM_RESERVE=8
+NODE_STORAGE=100
+TOTAL_RESERVE=$((SYSTEM_RESERVE + NODE_STORAGE))
 
 echo ""
 echo "💾 Disk Space Analysis:"
-echo "• Available space: ${AVAILABLE_SPACE}GB"
-echo "• Node storage needed: ${NODE_STORAGE}GB (official requirement)"
-echo "• System space needed: ${SYSTEM_RESERVE}GB"
-echo "• Total reserved: ${TOTAL_RESERVE}GB"
+echo " • Available: ${AVAILABLE_SPACE}GB"
+echo " • Node storage req’d: ${NODE_STORAGE}GB"
+echo " • System reserve: ${SYSTEM_RESERVE}GB"
+echo " • Total reserved: ${TOTAL_RESERVE}GB"
 
 if [ "$AVAILABLE_SPACE" -gt "$TOTAL_RESERVE" ]; then
     RECOMMENDED_SIZE=$((AVAILABLE_SPACE - TOTAL_RESERVE))
-    echo "• Recommended farming size: ${RECOMMENDED_SIZE}GB"
-    echo "✅ Sufficient disk space available"
+    echo " • Recommended farming size: ${RECOMMENDED_SIZE}GB"
 else
-    RECOMMENDED_SIZE=100  # Official minimum farming size
-    echo "⚠️  WARNING: Insufficient disk space!"
-    echo "   Available: ${AVAILABLE_SPACE}GB"
-    echo "   Required minimum: $((TOTAL_RESERVE + 100))GB (120GB reserved + 100GB farming)"
-    echo "   Your setup may experience issues"
+    RECOMMENDED_SIZE=100
+    echo "⚠️  Insufficient disk! Using min 100GB."
     WARNINGS=$((WARNINGS + 1))
 fi
 
 if [ "$WARNINGS" -gt 0 ]; then
     echo ""
-    echo "🚨 $WARNINGS hardware warning(s) detected!"
-    echo "📖 Official requirements: https://docs.autonomys.xyz/farming/intro"
-    echo ""
-    read -p "Do you want to continue anyway? (y/N): " CONTINUE
+    echo "🚨 $WARNINGS hardware warning(s). See requirements: https://docs.autonomys.xyz/farming/intro"
+    read -p "Continue anyway? (y/N): " CONTINUE
     if [[ ! "$CONTINUE" =~ ^[Yy]$ ]]; then
-        echo "❌ Setup cancelled. Please upgrade your hardware to meet requirements."
+        echo "❌ Aborting. Please upgrade hardware."
         exit 1
     fi
 fi
 
+# --------------------------------------------------
+# 5) Prompt for user input
+# --------------------------------------------------
 echo ""
-
-# Get user inputs
-echo "🔑 Please provide your Talisman wallet address for rewards:"
-read -p "Reward Address: " REWARD_ADDRESS
-
-if [ -z "$REWARD_ADDRESS" ]; then
-    echo "❌ Reward address is required!"
-    exit 1
-fi
+read -p "🔑 Talisman reward address: " REWARD_ADDRESS
+[ -z "$REWARD_ADDRESS" ] && { echo "❌ Reward address required!"; exit 1; }
 
 echo ""
-echo "💾 Enter the farming size in GB"
-echo "   Recommended: ${RECOMMENDED_SIZE}GB"
-echo "   Minimum: 100GB (official requirement)"
-read -p "Farming Size (GB): " FARMING_SIZE
-
+read -p "💾 Farming size in GB (min 100, rec ${RECOMMENDED_SIZE}): " FARMING_SIZE
 if [ -z "$FARMING_SIZE" ]; then
     FARMING_SIZE=$RECOMMENDED_SIZE
-    echo "📝 Using recommended size: ${FARMING_SIZE}GB"
 elif [ "$FARMING_SIZE" -lt 100 ]; then
-    echo "⚠️  Warning: ${FARMING_SIZE}GB is below the official minimum of 100GB"
-    read -p "Continue with ${FARMING_SIZE}GB? (y/N): " CONFIRM_SIZE
-    if [[ ! "$CONFIRM_SIZE" =~ ^[Yy]$ ]]; then
-        echo "❌ Please choose a size of 100GB or more"
-        exit 1
-    fi
+    read -p "⚠️  ${FARMING_SIZE}GB is below min. Continue? (y/N): " OK
+    [[ ! "$OK" =~ ^[Yy]$ ]] && { echo "❌ Choose ≥100GB."; exit 1; }
 fi
 
 echo ""
-echo "📛 Enter a name for your node (optional, default: 'my-autonomys-node'):"
-read -p "Node Name: " NODE_NAME
+read -p "📛 Node name (default: my-autonomys-node): " NODE_NAME
+NODE_NAME=${NODE_NAME:-my-autonomys-node}
 
-if [ -z "$NODE_NAME" ]; then
-    NODE_NAME="my-autonomys-node"
-fi
-
+# --------------------------------------------------
+# 6) Scaffold project
+# --------------------------------------------------
 echo ""
-echo "🔄 Starting installation process..."
-echo ""
-
-# Update system
-echo "🔄 Updating system packages..."
-sudo apt update && sudo apt upgrade -y
-check_success "System update"
-
-# Install required packages
-echo "📦 Installing required packages..."
-sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
-check_success "Package installation"
-
-# Install Docker
-echo "🐳 Installing Docker..."
-if ! command -v docker &> /dev/null; then
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    sudo apt update
-    sudo apt install -y docker-ce docker-ce-cli containerd.io
-    check_success "Docker installation"
-else
-    echo "✅ Docker is already installed!"
-fi
-
-# Install Docker Compose
-echo "🔧 Installing Docker Compose..."
-if ! command -v docker-compose &> /dev/null; then
-    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    sudo chmod +x /usr/local/bin/docker-compose
-    check_success "Docker Compose installation"
-else
-    echo "✅ Docker Compose is already installed!"
-fi
-
-# Add user to docker group
-echo "👤 Adding user to docker group..."
-sudo usermod -aG docker $USER
-check_success "User added to docker group"
-
-# Start and enable Docker
-echo "🚀 Starting Docker service..."
-sudo systemctl start docker
-sudo systemctl enable docker
-check_success "Docker service started"
-
-# Create project directory
 echo "📁 Creating project directory..."
 mkdir -p ~/autonomys-network
 cd ~/autonomys-network
 
-# Create docker-compose.yml file
-echo "📝 Creating Docker Compose configuration..."
 cat > docker-compose.yml << EOF
 version: '3.8'
 
@@ -202,7 +229,7 @@ services:
         "--rpc-methods", "unsafe",
         "--rpc-listen-on", "0.0.0.0:9944",
         "--farmer",
-        "--name", "${NODE_NAME}"
+        "--name", "$NODE_NAME"
       ]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -226,7 +253,7 @@ services:
         "farm",
         "--node-rpc-url", "ws://node:9944",
         "--listen-on", "/ip4/0.0.0.0/tcp/30533",
-        "--reward-address", "${REWARD_ADDRESS}",
+        "--reward-address", "$REWARD_ADDRESS",
         "path=/var/subspace,size=${FARMING_SIZE}G"
       ]
 
@@ -234,40 +261,42 @@ volumes:
   node-data:
   farmer-data:
 EOF
-
 check_success "Docker Compose file created"
 
-# Create useful scripts
-echo "📋 Creating management scripts..."
+# Management scripts
+for script in start stop logs status; do
+  cat > ${script}.sh << 'EOF'
+#!/bin/bash
+EOF
+done
 
+# start.sh
 cat > start.sh << 'EOF'
 #!/bin/bash
 echo "🚀 Starting Autonomys Network..."
 sudo docker-compose up -d
 echo "✅ Services started!"
-echo "📊 Use 'sudo docker-compose ps' to check status"
 EOF
-chmod +x start.sh
 
+# stop.sh
 cat > stop.sh << 'EOF'
 #!/bin/bash
 echo "🛑 Stopping Autonomys Network..."
 sudo docker-compose down
 echo "✅ Services stopped!"
 EOF
-chmod +x stop.sh
 
+# logs.sh
 cat > logs.sh << 'EOF'
 #!/bin/bash
-echo "📋 Showing logs (Press Ctrl+C to exit)..."
+echo "📋 Showing logs..."
 sudo docker-compose logs --tail=1000 -f
 EOF
-chmod +x logs.sh
 
+# status.sh
 cat > status.sh << 'EOF'
 #!/bin/bash
-echo "📊 Autonomys Network Status:"
-echo "=========================="
+echo "📊 Network Status:"
 sudo docker-compose ps
 echo ""
 echo "💾 Disk Usage:"
@@ -276,52 +305,41 @@ echo ""
 echo "🐳 Docker System Info:"
 sudo docker system df
 EOF
-chmod +x status.sh
 
+chmod +x *.sh
 check_success "Management scripts created"
 
-# Pull Docker images
-echo "📥 Pulling Docker images (this may take a few minutes)..."
+# Pull & launch
+echo "📥 Pulling images..."
 sudo docker-compose pull
-check_success "Docker images pulled"
+check_success "Images pulled"
 
-# Start the services
-echo "🚀 Starting Autonomys Network services..."
+echo "🚀 Launching services..."
 sudo docker-compose up -d
-check_success "Services started"
+check_success "Services launched"
 
-echo ""
-echo "🎉 SUCCESS! Autonomys Network is now running!"
-echo "============================================="
-echo ""
-echo "📊 Your Configuration:"
-echo "• Node Name: $NODE_NAME"
-echo "• Reward Address: $REWARD_ADDRESS"
-echo "• Farming Size: ${FARMING_SIZE}GB"
-echo "• CPU Cores: $CPU_CORES"
-echo "• RAM: ${RAM_GB}GB"
-echo "• Available Disk: ${AVAILABLE_SPACE}GB"
-echo ""
-echo "🔧 Useful Commands:"
-echo "• Check status: ./status.sh"
-echo "• View logs: ./logs.sh"
-echo "• Stop services: ./stop.sh"
-echo "• Start services: ./start.sh"
-echo ""
-echo "📋 Or use Docker Compose directly:"
-echo "• sudo docker-compose ps (check status)"
-echo "• sudo docker-compose logs --tail=1000 -f (view logs)"
-echo "• sudo docker-compose down (stop)"
-echo "• sudo docker-compose up -d (start)"
-echo ""
-echo "⚠️  IMPORTANT: You may need to log out and back in for Docker permissions to take effect!"
-echo ""
-echo "🌐 Your node will sync with the network and start farming automatically."
-echo "💰 Rewards will be sent to: $REWARD_ADDRESS"
-echo ""
-if [ "$WARNINGS" -gt 0 ]; then
-    echo "⚠️  Remember: Your system has hardware warnings. Monitor performance closely."
-    echo "📖 Official requirements: https://docs.autonomys.xyz/farming/intro"
-    echo ""
-fi
-echo "Happy farming! 🚜✨"
+# Final summary
+cat << EOF
+
+🎉 SUCCESS! Autonomys Network is running.
+
+📊 Configuration:
+ • Node Name:     $NODE_NAME
+ • Reward Addr:   $REWARD_ADDRESS
+ • Farming Size:  ${FARMING_SIZE}GB
+ • CPU Cores:     $CPU_CORES
+ • RAM:           ${RAM_GB}GB
+ • Disk Avail:    ${AVAILABLE_SPACE}GB
+
+🔧 Commands:
+ • ./status.sh   → status
+ • ./logs.sh     → live logs
+ • ./stop.sh     → stop
+ • ./start.sh    → restart
+
+⚠️  You may need to log out/in for docker group changes to apply.
+🌐 Your node will sync & begin farming automatically.
+💰 Rewards → $REWARD_ADDRESS
+
+Happy farming! 🚜✨
+EOF
