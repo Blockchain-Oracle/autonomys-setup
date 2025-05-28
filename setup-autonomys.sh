@@ -235,16 +235,24 @@ convert_to_gb() {
     esac
 }
 
-# Validate Talisman wallet address
+# Validate Talisman wallet address (Fixed version)
 validate_talisman_address() {
     local address=$1
     
-    # Substrate addresses (Polkadot/Kusama format) start with specific characters
-    # They are base58 encoded and should be 47-48 characters long
-    if [[ $address =~ ^[1-9A-HJ-NP-Za-km-z]{47,48}$ ]]; then
-        # Additional check for common Substrate address prefixes
-        if [[ $address =~ ^[1-5] ]]; then
-            log_info "Talisman wallet address validation passed"
+    # Check if address is empty
+    if [ -z "$address" ]; then
+        log_error "Address cannot be empty"
+        return 1
+    fi
+    
+    # Substrate addresses are base58 encoded and typically 47-48 characters long
+    # They can start with various characters depending on the network prefix
+    # Valid base58 characters: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+    if [[ $address =~ ^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{40,50}$ ]]; then
+        # Additional length check for typical Substrate addresses
+        local addr_length=${#address}
+        if [ $addr_length -ge 40 ] && [ $addr_length -le 50 ]; then
+            log_info "Talisman wallet address validation passed (length: $addr_length)"
             return 0
         fi
     fi
@@ -279,9 +287,10 @@ get_user_inputs() {
         echo "Please enter your Talisman wallet address where you want to receive farming rewards."
         echo ""
         echo "📝 Your Talisman wallet address should:"
-        echo "   • Start with numbers 1-5"
-        echo "   • Be 47-48 characters long"
+        echo "   • Be a valid Substrate/Polkadot format address"
+        echo "   • Be approximately 40-50 characters long"
         echo "   • Example: 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+        echo "   • Example: sudZUSne8ZzFkuVj5YwoJXjFaQQgmL7i2kciCXRBVMNdv6XgD"
         echo ""
         read -p "Enter your Talisman wallet address: " REWARD_ADDRESS
         
@@ -294,7 +303,7 @@ get_user_inputs() {
                 echo ""
                 echo "❌ Invalid wallet address format!"
                 echo "   Please ensure you're entering a valid Talisman/Substrate address."
-                echo "   It should be 47-48 characters and start with 1-5."
+                echo "   It should be 40-50 characters long and contain only valid base58 characters."
             fi
         else
             echo "❌ Wallet address cannot be empty!"
